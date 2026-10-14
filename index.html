@@ -224,41 +224,24 @@
     const prisonOptions = ["なし", "3年", "2年", "1年", "6か月"];
     const fineOptions = ["なし", "300万円", "100万円", "50万円", "10万円"];
 
-    let currentQuestions = [];
-    let incorrectQuestions = []; // 間違えた問題
-    let passedQuestions = [];    // パスした問題
+    let queue = [];          // 現在出題すべき問題のリスト
+    let currentRound = 1;    // 現在の周回数
+    let totalQuestionsCount = quizData.length;
     let currentIndex = 0;
     let score = 0;
     let selectedPrison = "";
     let selectedFine = "";
-    let isReviewMode = false;
+    
+    // この周回で間違えた、またはパスした問題を一時的にためるリスト
+    let nextRoundQueue = [];
 
     function initQuiz() {
-        currentQuestions = [...quizData].sort(() => Math.random() - 0.5);
-        incorrectQuestions = [];
-        passedQuestions = [];
+        queue = [...quizData].sort(() => Math.random() - 0.5);
+        nextRoundQueue = [];
+        currentRound = 1;
         currentIndex = 0;
         score = 0;
-        isReviewMode = false;
         document.getElementById("app-title").textContent = "宅建業法 罰則暗記クイズ";
-        loadQuestion();
-    }
-
-    function initReviewQuiz() {
-        // 間違えた問題とパスした問題を合わせる（またはパスした問題だけでもOKですが、両方まとめて再挑戦できるようにしています）
-        const retryList = [...incorrectQuestions, ...passedQuestions];
-        if (retryList.length === 0) {
-            alert("復習する問題はありません！");
-            initQuiz();
-            return;
-        }
-        currentQuestions = [...new Set(retryList)].sort(() => Math.random() - 0.5);
-        incorrectQuestions = [];
-        passedQuestions = [];
-        currentIndex = 0;
-        score = 0;
-        isReviewMode = true;
-        document.getElementById("app-title").textContent = "宅建業法 罰則暗記クイズ（復習・パス問題モード）";
         loadQuestion();
     }
 
@@ -316,7 +299,7 @@
     }
 
     function loadQuestion() {
-        const q = currentQuestions[currentIndex];
+        const q = queue[currentIndex];
         document.getElementById("violation").textContent = "「" + q.text + "」";
         
         selectedPrison = "";
@@ -324,7 +307,7 @@
         renderButtons();
         updatePreview();
         
-        document.getElementById("progress-text").textContent = `問題: ${currentIndex + 1} / ${currentQuestions.length}`;
+        document.getElementById("progress-text").textContent = `第${currentRound}周目 | 問題: ${currentIndex + 1} / ${queue.length}`;
         document.getElementById("score-text").textContent = `正解数: ${score}`;
         
         document.getElementById("result-box").style.display = "none";
@@ -334,14 +317,13 @@
         document.getElementById("next-btn").style.display = "none";
     }
 
-    // パスボタンが押されたときの処理
+    // パスボタンが押されたときの処理（次の周回に回す）
     function passQuestion() {
-        const q = currentQuestions[currentIndex];
-        // パスリストに追加（重複防止）
-        if (!passedQuestions.some(item => item.text === q.text)) {
-            passedQuestions.push(q);
+        const q = queue[currentIndex];
+        if (!nextRoundQueue.some(item => item.text === q.text)) {
+            nextRoundQueue.push(q);
         }
-        nextQuestion();
+        nextQuestionStep();
     }
 
     function checkAnswer() {
@@ -350,16 +332,16 @@
             return;
         }
 
-        const q = currentQuestions[currentIndex];
+        const q = queue[currentIndex];
         const isCorrect = (selectedPrison === q.prison && selectedFine === q.fine);
 
         if (isCorrect) {
             score++;
             document.getElementById("score-text").textContent = `正解数: ${score}`;
         } else {
-            // 間違えた問題を蓄積（重複防止）
-            if (!incorrectQuestions.some(item => item.text === q.text)) {
-                incorrectQuestions.push(q);
+            // 不正解の場合は次の周回のリストに追加（重複防止）
+            if (!nextRoundQueue.some(item => item.text === q.text)) {
+                nextRoundQueue.push(q);
             }
         }
 
@@ -386,31 +368,29 @@
         explanation.innerHTML = `正解は：<br><strong>${correctText}</strong>`;
 
         document.getElementById("action-buttons").style.display = "none";
-        
-        if (currentIndex < currentQuestions.length - 1) {
-            document.getElementById("next-btn").style.display = "block";
-            document.getElementById("next-btn").textContent = "次の問題へ";
-        } else {
-            document.getElementById("next-btn").style.display = "block";
-            const totalReviewCount = incorrectQuestions.length + passedQuestions.length;
-            if (!isReviewMode && totalReviewCount > 0) {
-                document.getElementById("next-btn").textContent = `パス・間違えた問題 (${totalReviewCount}問) を復習する`;
-            } else {
-                document.getElementById("next-btn").textContent = "最初からもう一度挑戦する";
-            }
-        }
+        document.getElementById("next-btn").style.display = "block";
     }
 
     function nextQuestion() {
+        nextQuestionStep();
+    }
+
+    function nextQuestionStep() {
         currentIndex++;
-        if (currentIndex < currentQuestions.length) {
+        if (currentIndex < queue.length) {
             loadQuestion();
         } else {
-            const totalReviewCount = incorrectQuestions.length + passedQuestions.length;
-            if (!isReviewMode && totalReviewCount > 0) {
-                initReviewQuiz();
+            // 今の周回が終了したとき
+            if (nextRoundQueue.length > 0) {
+                // まだ間違えた（またはパスした）問題が残っている場合：次の周回へ
+                queue = [...nextRoundQueue].sort(() => Math.random() - 0.5);
+                nextRoundQueue = [];
+                currentRound++;
+                currentIndex = 0;
+                loadQuestion();
             } else {
-                alert(`お疲れ様でした！すべての学習が完了しました。`);
+                // 全問正解して残りがなくなった場合
+                alert(`お疲れ様でした！全${totalQuestionsCount}問すべて正解しました！🎉`);
                 initQuiz();
             }
         }
